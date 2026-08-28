@@ -8,6 +8,8 @@ app = Flask(__name__)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+# Секретный пароль для доступа к панели (можно изменить на любой другой)
+PANEL_PASSWORD = "NeverFairAdminPassword2026"
 
 def get_headers():
     return {
@@ -20,7 +22,9 @@ def get_headers():
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Функция записи действий в лог
+def verify_password(data):
+    return data and data.get('admin_pass') == PANEL_PASSWORD
+
 def log_action(admin_name, action_desc):
     try:
         url = f"{SUPABASE_URL}/rest/v1/audit_logs"
@@ -82,10 +86,14 @@ def login():
             
     return jsonify({"error": "Неверный логин или пароль"}), 401
 
-# --- ПАНЕЛЬ УПРАВЛЕНИЯ И ЛОГИ ---
+# --- ЗАЩИЩЕННЫЕ ЭНДПОИНТЫ ПАНЕЛИ УПРАВЛЕНИЯ ---
 
-@app.route('/api/v1/admin/data', methods=['GET'])
+@app.route('/api/v1/admin/data', methods=['POST'])
 def get_admin_data():
+    data = request.json
+    if not verify_password(data):
+        return jsonify({"error": "Неверный пароль панели"}), 403
+
     headers = get_headers()
     users_res = requests.get(f"{SUPABASE_URL}/rest/v1/users?select=username,role,user_id", headers=headers)
     bans_res = requests.get(f"{SUPABASE_URL}/rest/v1/banned_ips", headers=headers)
@@ -102,6 +110,9 @@ def get_admin_data():
 @app.route('/api/v1/admin/set_role', methods=['POST'])
 def set_role():
     data = request.json
+    if not verify_password(data):
+        return jsonify({"error": "Неверный пароль панели"}), 403
+
     admin, username, role = data.get('admin', 'System'), data.get('username'), data.get('role')
     
     url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}"
@@ -115,6 +126,9 @@ def set_role():
 @app.route('/api/v1/admin/set_id', methods=['POST'])
 def set_id():
     data = request.json
+    if not verify_password(data):
+        return jsonify({"error": "Неверный пароль панели"}), 403
+
     admin, username, new_id = data.get('admin', 'System'), data.get('username'), data.get('new_id')
     
     url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}"
@@ -128,8 +142,11 @@ def set_id():
 @app.route('/api/v1/admin/ban', methods=['POST'])
 def ban_player():
     data = request.json
+    if not verify_password(data):
+        return jsonify({"error": "Неверный пароль панели"}), 403
+
     admin, username = data.get('admin', 'System'), data.get('username')
-    ip = data.get('ip', '192.168.1.1') # Симуляция или реальный IP
+    ip = data.get('ip', '192.168.1.1')
     
     url = f"{SUPABASE_URL}/rest/v1/banned_ips"
     res = requests.post(url, headers=get_headers(), json={"ip": ip, "username": username})
@@ -142,6 +159,9 @@ def ban_player():
 @app.route('/api/v1/admin/unban', methods=['POST'])
 def unban_player():
     data = request.json
+    if not verify_password(data):
+        return jsonify({"error": "Неверный пароль панели"}), 403
+
     admin, ip = data.get('admin', 'System'), data.get('ip')
     
     url = f"{SUPABASE_URL}/rest/v1/banned_ips?ip=eq.{ip}"
