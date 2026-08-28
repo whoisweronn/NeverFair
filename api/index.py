@@ -70,25 +70,33 @@ def login():
         return jsonify({"error": "Пустые данные"}), 400
 
     username = data['username']
-    # Обязательно хешируем введенный пароль точно так же, как при регистрации!
-    password = hash_password(data['password'])
+    raw_password = data['password']
     
     headers = get_headers()
-    # Ищем пользователя строго по совпадению логина И готового хеша пароля
-    url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}&password=eq.{password}&select=role,user_id"
+    # Запрашиваем пользователя по одному только никнейму
+    url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}&select=password,role,user_id"
     
     res = requests.get(url, headers=headers)
     if res.status_code == 200:
         users = res.json()
         if len(users) > 0:
-            return jsonify({
-                "id": users[0].get("user_id") or f"ID-{len(username)*42}",
-                "token": "secure_token_placeholder",
-                "username": username,
-                "role": users[0]["role"]
-            }), 200
+            db_password_hash = users[0]["password"]
+            input_password_hash = hash_password(raw_password)
             
-    return jsonify({"error": "Неверный логин или пароль"}), 401
+            # Сравниваем хеши прямо в Python
+            if db_password_hash == input_password_hash:
+                return jsonify({
+                    "id": users[0].get("user_id") or f"ID-{len(username)*42}",
+                    "token": "secure_token_placeholder",
+                    "username": username,
+                    "role": users[0]["role"]
+                }), 200
+            else:
+                return jsonify({"error": "Неверный пароль"}), 401
+        else:
+            return jsonify({"error": "Пользователь не найден"}), 401
+            
+    return jsonify({"error": f"Ошибка БД: {res.text}"}), 500
 
 # --- ЗАЩИЩЕННЫЕ ЭНДПОИНТЫ ПАНЕЛИ УПРАВЛЕНИЯ ---
 
