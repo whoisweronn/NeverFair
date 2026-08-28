@@ -38,21 +38,26 @@ def register():
     username = data['username']
     password = data['password']
     
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    c.execute("SELECT * FROM users WHERE username=%s", (username,))
-    if c.fetchone():
-        conn.close()
-        return jsonify({"error": "Никнейм уже занят"}), 400
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
         
-    c.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", 
-              (username, hash_password(password), "Игрок"))
-    conn.commit()
-    c.close()
-    conn.close()
-    
-    return jsonify({"status": "ok"}), 200
+        c.execute("SELECT * FROM users WHERE username=%s", (username,))
+        if c.fetchone():
+            c.close()
+            conn.close()
+            return jsonify({"error": "Никнейм уже занят"}), 400
+            
+        c.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", 
+                  (username, hash_password(password), "Игрок"))
+        conn.commit()
+        c.close()
+        conn.close()
+        
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        # Теперь сервер вернет точную техническую ошибку в тексте!
+        return jsonify({"error": f"Ошибка БД: {str(e)}"}), 500
 
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
