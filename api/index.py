@@ -2,32 +2,42 @@ from flask import Flask, request, jsonify
 import psycopg2
 import hashlib
 import os
+import socket
 
 app = Flask(__name__)
 
-# Пароль от БД будет спрятан в настройках Vercel
+# Получаем полную строку подключения из переменных среды Vercel
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    # Превращаем хост из строки подключения в IPv4, чтобы избежать ошибок сети на Vercel
+    db_host = "db.hdbdktukmawqdrkceate.supabase.co"
+    try:
+        ipv4_address = socket.getaddrinfo(db_host, 5432, socket.AF_INET)[0][4][0]
+        # Заменяем домен на чистый IPv4 в строчке подключения
+        safe_url = DATABASE_URL.replace(db_host, ipv4_address)
+    except Exception:
+        safe_url = DATABASE_URL
+
+    return psycopg2.connect(safe_url)
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Создаем таблицу в Supabase при первом запуске
+# Автоматическое создание таблицы, если её нет
 def init_db():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (username VARCHAR(255) PRIMARY KEY, password VARCHAR(255), role VARCHAR(50))''')
-    conn.commit()
-    c.close()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS users 
+                     (username VARCHAR(255) PRIMARY KEY, password VARCHAR(255), role VARCHAR(50))''')
+        conn.commit()
+        c.close()
+        conn.close()
+    except Exception as e:
+        print("Ошибка инициализации БД:", e)
 
-try:
-    init_db()
-except Exception as e:
-    print("Ошибка инициализации БД:", e)
+init_db()
 
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register():
@@ -56,7 +66,6 @@ def register():
         
         return jsonify({"status": "ok"}), 200
     except Exception as e:
-        # Теперь сервер вернет точную техническую ошибку в тексте!
         return jsonify({"error": f"Ошибка БД: {str(e)}"}), 500
 
 @app.route('/api/v1/auth/login', methods=['POST'])
@@ -68,19 +77,22 @@ def login():
     username = data['username']
     password = hash_password(data['password'])
     
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT role FROM users WHERE username=%s AND password=%s", (username, password))
-    user = c.fetchone()
-    c.close()
-    conn.close()
-    
-    if user:
-        return jsonify({
-            "id": f"ID-{len(username)*42}",
-            "token": "secure_token_placeholder",
-            "username": username,
-            "role": user[0]
-        }), 200
-    else:
-        return jsonify({"error": "Неверный логин или пароль"}), 401
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT role FROM users WHERE username=%s AND password=%s", (username, password))
+        user = c.fetchone()
+        c.close()
+        conn.close()
+        
+        if user:
+            return jsonify({
+                "id": f"ID-{len(username)*42}",
+                "token": "secure_token_placeholder",
+                "username": username,
+                "role": user[0]
+            }), 200
+        else:
+            return jsonify({"error": "Неверный логин или пароль"}), 401
+    except Exception as e:
+        return jsonify({"error": f"Ошибка БД: {str(e)}"}), 500
