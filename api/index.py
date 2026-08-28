@@ -8,7 +8,6 @@ app = Flask(__name__)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
-# Секретный пароль для доступа к панели (можно изменить на любой другой)
 PANEL_PASSWORD = "NeverFairAdminPassword2026"
 
 def get_headers():
@@ -44,13 +43,11 @@ def register():
         return jsonify({"error": "Пустые данные"}), 400
         
     username = data['username']
-    # Хешируем пароль перед сохранением в базу
     password = hash_password(data['password'])
     
     headers = get_headers()
     url = f"{SUPABASE_URL}/rest/v1/users"
     
-    # Проверяем, есть ли уже такой юзер
     check_res = requests.get(f"{url}?username=eq.{username}", headers=headers)
     if check_res.status_code == 200 and len(check_res.json()) > 0:
         return jsonify({"error": "Никнейм уже занят"}), 400
@@ -73,7 +70,6 @@ def login():
     raw_password = data['password']
     
     headers = get_headers()
-    # Запрашиваем пользователя по одному только никнейму
     url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}&select=password,role,user_id"
     
     res = requests.get(url, headers=headers)
@@ -83,7 +79,6 @@ def login():
             db_password_hash = users[0]["password"]
             input_password_hash = hash_password(raw_password)
             
-            # Сравниваем хеши прямо в Python
             if db_password_hash == input_password_hash:
                 return jsonify({
                     "id": users[0].get("user_id") or f"ID-{len(username)*42}",
@@ -97,8 +92,6 @@ def login():
             return jsonify({"error": "Пользователь не найден"}), 401
             
     return jsonify({"error": f"Ошибка БД: {res.text}"}), 500
-
-# --- ЗАЩИЩЕННЫЕ ЭНДПОИНТЫ ПАНЕЛИ УПРАВЛЕНИЯ ---
 
 @app.route('/api/v1/admin/data', methods=['POST'])
 def get_admin_data():
