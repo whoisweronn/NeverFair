@@ -44,11 +44,13 @@ def register():
         return jsonify({"error": "Пустые данные"}), 400
         
     username = data['username']
+    # Хешируем пароль перед сохранением в базу
     password = hash_password(data['password'])
     
     headers = get_headers()
     url = f"{SUPABASE_URL}/rest/v1/users"
     
+    # Проверяем, есть ли уже такой юзер
     check_res = requests.get(f"{url}?username=eq.{username}", headers=headers)
     if check_res.status_code == 200 and len(check_res.json()) > 0:
         return jsonify({"error": "Никнейм уже занят"}), 400
@@ -68,9 +70,11 @@ def login():
         return jsonify({"error": "Пустые данные"}), 400
 
     username = data['username']
+    # Обязательно хешируем введенный пароль точно так же, как при регистрации!
     password = hash_password(data['password'])
     
     headers = get_headers()
+    # Ищем пользователя строго по совпадению логина И готового хеша пароля
     url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}&password=eq.{password}&select=role,user_id"
     
     res = requests.get(url, headers=headers)
