@@ -1,43 +1,16 @@
 from flask import Flask, request, jsonify
-import psycopg2
 import hashlib
 import os
-import socket
+import requests
 
 app = Flask(__name__)
 
-# Получаем полную строку подключения из переменных среды Vercel
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-def get_db_connection():
-    # Превращаем хост из строки подключения в IPv4, чтобы избежать ошибок сети на Vercel
-    db_host = "db.hdbdktukmawqdrkceate.supabase.co"
-    try:
-        ipv4_address = socket.getaddrinfo(db_host, 5432, socket.AF_INET)[0][4][0]
-        # Заменяем домен на чистый IPv4 в строчке подключения
-        safe_url = DATABASE_URL.replace(db_host, ipv4_address)
-    except Exception:
-        safe_url = DATABASE_URL
-
-    return psycopg2.connect(safe_url)
+# Данные для подключения к Supabase через HTTP API (вместопрямого подключения)
+SUPABASE_URL = os.environ.get("SUPABASE_URL")       # Например: https://hdbdktukmawqdrkceate.supabase.co
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") # Секретный ключ service_role из настроек Supabase
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
-
-# Автоматическое создание таблицы, если её нет
-def init_db():
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users 
-                     (username VARCHAR(255) PRIMARY KEY, password VARCHAR(255), role VARCHAR(50))''')
-        conn.commit()
-        c.close()
-        conn.close()
-    except Exception as e:
-        print("Ошибка инициализации БД:", e)
-
-init_db()
 
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register():
@@ -46,27 +19,35 @@ def register():
         return jsonify({"error": "Пустые данные"}), 400
         
     username = data['username']
-    password = data['password']
+    password = hash_password(data['password'])
     
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        
-        c.execute("SELECT * FROM users WHERE username=%s", (username,))
-        if c.fetchone():
-            c.close()
-            conn.close()
-            return jsonify({"error": "Никнейм уже занят"}), 400
-            
-        c.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", 
-                  (username, hash_password(password), "Игрок"))
-        conn.commit()
-        c.close()
-        conn.close()
-        
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+    
+    url = f"{SUPABASE_URL}/rest/v1/users"
+    
+    # Проверяем, существует ли пользователь
+    check_res = requests.get(f"{url}?username=eq.{username}", headers=headers)
+    if check_res.status_code == 200 and len(check_res.json()) > 0:
+        return jsonify({"error": "Никнейм уже занят"}), 400
+
+    # Создаем нового пользователя
+    payload = {
+        "username": username,
+        "password": password,
+        "role": "Игрок"
+    }
+    
+    res = requests.post(url, headers=headers, json=payload)
+    
+    if res.status_code in [200, 201]:
         return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        return jsonify({"error": f"Ошибка БД: {str(e)}"}), 500
+    else:
+        return jsonify({"error": f"Ошибка Supabase: {res.text}"}), 500
 
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
@@ -77,22 +58,25 @@ def login():
     username = data['username']
     password = hash_password(data['password'])
     
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT role FROM users WHERE username=%s AND password=%s", (username, password))
-        user = c.fetchone()
-        c.close()
-        conn.close()
-        
-        if user:
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}&password=eq.{password}&select=role"
+    
+    res = requests.get(url, headers=headers)
+    
+    if res.status_code == 200:
+        users = res.json()
+        if len(users) > 0:
+            role = users[0]["role"]
             return jsonify({
                 "id": f"ID-{len(username)*42}",
                 "token": "secure_token_placeholder",
                 "username": username,
-                "role": user[0]
+                "role": role
             }), 200
-        else:
-            return jsonify({"error": "Неверный логин или пароль"}), 401
-    except Exception as e:
-        return jsonify({"error": f"Ошибка БД: {str(e)}"}), 500
+            
+    return jsonify({"error": "Неверный логин или пароль"}), 401
