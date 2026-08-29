@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
-PANEL_PASSWORD = "NeverFairAdminPassword2026"
+PANEL_PASSWORD = "qweewq_000SDF"
 
 def get_headers():
     return {
