@@ -1,5 +1,0 @@
-[project]
-name = "neverfair-launcher-api"
-version = "1.2.0"
-requires-python = ">=3.14,<3.15"
-dependencies = []
